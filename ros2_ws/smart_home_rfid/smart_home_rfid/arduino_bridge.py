@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.node import Node
 
-from std_msgs.msg import String, Float32, Int32
+from std_msgs.msg import String, Float32, Int32, Bool
 
 import serial
 import threading
@@ -23,6 +23,8 @@ class ArduinoBridgeNode(Node):
       - 訂閱 ROS topic:
           - /auth_result     (String: "OK"/"FAIL")
           - /motor_speed     (Int32: 0~255)
+          - /supervisor_block (Bool)
+          - /supervisor_motor_override (Int32: 0~255)
     """
 
     def __init__(self):
@@ -66,6 +68,18 @@ class ArduinoBridgeNode(Node):
             self.motor_speed_callback,
             10
         )
+        self.supervisor_block_sub = self.create_subscription(
+            Bool,
+            'supervisor_block',
+            self.supervisor_block_callback,
+            10,
+        )
+        self.supervisor_motor_sub = self.create_subscription(
+            Int32,
+            'supervisor_motor_override',
+            self.supervisor_motor_override_callback,
+            10,
+        )
 
         # 用 timer 週期性讀取 serial
         self.read_timer = self.create_timer(0.05, self.read_serial_timer_cb)
@@ -75,6 +89,7 @@ class ArduinoBridgeNode(Node):
 
         # 給 Serial 寫入用的 lock（避免多執行緒同時寫）
         self.serial_lock = threading.Lock()
+        self.supervisor_blocked = False
 
         self.get_logger().info('arduino_bridge node started.')
 
@@ -156,7 +171,12 @@ class ArduinoBridgeNode(Node):
         if self.ser is None or not self.ser.is_open:
             return
 
-        result = msg.data.strip().upper()
+        if self.supervisor_blocked:
+            self.get_logger().warn('Auth result ignored because system is supervisor-blocked.')
+            result = 'FAIL'
+        else:
+            result = msg.data.strip().upper()
+
         if result not in ('OK', 'FAIL'):
             self.get_logger().warn(f'Unknown auth_result: {msg.data}')
             return
@@ -187,6 +207,10 @@ class ArduinoBridgeNode(Node):
         if spd > 255:
             spd = 255
 
+        if self.supervisor_blocked:
+            self.get_logger().warn('Motor speed request blocked by supervisor. Forcing 0.')
+            spd = 0
+
         cmd = f'MOTOR,SPD={spd}\n'
         with self.serial_lock:
             try:
@@ -194,6 +218,41 @@ class ArduinoBridgeNode(Node):
                 self.get_logger().info(f'Sent to Arduino: {cmd.strip()}')
             except serial.SerialException as e:
                 self.get_logger().error(f'Serial write error (MOTOR): {e}')
+
+    # -------------------------
+    # Supervisor: block system toggle
+    # -------------------------
+    def supervisor_block_callback(self, msg: Bool):
+        self.supervisor_blocked = bool(msg.data)
+        if self.supervisor_blocked:
+            self.get_logger().warn('Supervisor block enabled: stopping motor and denying auth.')
+            # stop motor immediately
+            stop_msg = Int32()
+            stop_msg.data = 0
+            self.supervisor_motor_override_callback(stop_msg)
+        else:
+            self.get_logger().info('Supervisor block disabled.')
+
+    # -------------------------
+    # Supervisor: direct motor override
+    # -------------------------
+    def supervisor_motor_override_callback(self, msg: Int32):
+        if self.ser is None or not self.ser.is_open:
+            return
+
+        spd = msg.data
+        if spd < 0:
+            spd = 0
+        if spd > 255:
+            spd = 255
+
+        cmd = f'MOTOR,SPD={spd}\n'
+        with self.serial_lock:
+            try:
+                self.ser.write(cmd.encode('utf-8'))
+                self.get_logger().info(f'Sent to Arduino (supervisor): {cmd.strip()}')
+            except serial.SerialException as e:
+                self.get_logger().error(f'Serial write error (SUP_MOTOR): {e}')
     # -------------------------
     # 定期向Arduino收取資料
     # -------------------------
