@@ -23,7 +23,7 @@ def generate_launch_description():
 
     whitelist_file_arg = DeclareLaunchArgument(
         'whitelist_file',
-        default_value='',
+        default_value='/home/ros2vm/final_project_ros2/ros2_ws/smart_home_rfid/config/whitelist.json',
         description='Path to whitelist JSON file'
     )
 
