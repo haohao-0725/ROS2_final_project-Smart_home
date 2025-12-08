@@ -1,0 +1,31 @@
+# ==== ROS2 colcon 產生的檔案 ====
+build/
+install/
+log/
+.colcon/
+
+# 如果你有用 Python node
+__pycache__/
+*.pyc
+
+# VSCode / 開發環境設定
+.vscode/
+.idea/
+
+# Arduino 編譯輸出
+*.hex
+*.elf
+
+# 一般 C/C++ 編譯輸出
+*.o
+*.out
+*.a
+
+# Web 專案常見產物
+node_modules/
+dist/
+*.log
+
+# 系統垃圾檔
+.DS_Store
+Thumbs.db
