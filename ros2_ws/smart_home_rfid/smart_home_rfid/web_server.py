@@ -39,6 +39,7 @@ class WebBridgeNode(Node):
         /password_attempt (String)
         /motor_speed      (Int32)
         /logout_request   (String)
+        /supervisor_cmd   (String)
     - 每次收到新的資料，就透過 socketio. emit() 推給前端
     """
 
@@ -51,6 +52,7 @@ class WebBridgeNode(Node):
         self.latest_hum = 0.0
         self. latest_auth_state = "INIT"
         self. latest_uid = "NONE"
+        self.latest_supervisor_status = "{}"
 
         # 時間戳記（用於前端顯示上次更新時間）
         self.last_sensor_update_time = time.time()
@@ -61,6 +63,7 @@ class WebBridgeNode(Node):
         self.pwd_pub = self. create_publisher(String, 'password_attempt', 10)
         self.motor_pub = self. create_publisher(Int32, 'motor_speed', 10)
         self. logout_pub = self.create_publisher(String, 'logout_request', 10)
+        self.supervisor_cmd_pub = self.create_publisher(String, 'supervisor_cmd', 10)
 
         # Subscribers
         self. create_subscription(Float32, 'lux', self.lux_cb, 10)
@@ -68,6 +71,10 @@ class WebBridgeNode(Node):
         self. create_subscription(Float32, 'humidity', self.hum_cb, 10)
         self.create_subscription(String, 'auth_state', self. auth_state_cb, 10)
         self.create_subscription(String, 'rfid_uid', self.rfid_cb, 10)
+        self.create_subscription(String, 'supervisor_status', self.supervisor_status_cb, 10)
+
+        # Heartbeat push to front-end
+        self.create_timer(1.0, self.push_status_timer_cb)
 
         self.get_logger(). info('web_bridge_node started.')
 
@@ -110,6 +117,13 @@ class WebBridgeNode(Node):
             'timestamp': self.last_rfid_update_time,
         }, namespace='/ws')
 
+    def supervisor_status_cb(self, msg: String):
+        self.latest_supervisor_status = msg.data
+        socketio.emit('supervisor_status', {
+            'status': self.latest_supervisor_status,
+            'timestamp': time.time(),
+        }, namespace='/ws')
+
     # ---- 提供給 Flask Websocket 呼叫 ----
     def publish_password(self, password: str):
         msg = String()
@@ -128,6 +142,12 @@ class WebBridgeNode(Node):
         msg.data = 'LOGOUT'
         self.logout_pub.publish(msg)
         self. get_logger().info('Published logout_request')
+
+    def publish_supervisor_command(self, command: str):
+        msg = String()
+        msg.data = command
+        self.supervisor_cmd_pub.publish(msg)
+        self.get_logger().info(f'Published supervisor_cmd: {command}')
 
     def push_status_timer_cb(self):
         """Heartbeat：就算 ROS 資料沒變，也每秒推一次給 Web。"""
@@ -149,6 +169,11 @@ class WebBridgeNode(Node):
         socketio.emit('rfid_update', {
             'uid': self.latest_uid,
             'timestamp': self.last_rfid_update_time or time.time(),
+        }, namespace='/ws')
+
+        socketio.emit('supervisor_status', {
+            'status': self.latest_supervisor_status,
+            'timestamp': time.time(),
         }, namespace='/ws')
 
 
@@ -186,6 +211,10 @@ def ws_connect():
             'uid': ros_node.latest_uid,
             'timestamp': ros_node.last_rfid_update_time,
         })
+        emit('supervisor_status', {
+            'status': ros_node.latest_supervisor_status,
+            'timestamp': time.time(),
+        })
 
 
 @socketio.on('disconnect', namespace='/ws')
@@ -221,6 +250,15 @@ def handle_logout():
     print('Received logout request from web')
     if ros_node is not None:
         ros_node.publish_logout()
+
+
+@socketio.on('supervisor_command', namespace='/ws')
+def handle_supervisor_command(data):
+    """處理監督者指令，data: {'command': 'BLOCK_SYSTEM'}"""
+    cmd = data.get('command', '') if isinstance(data, dict) else str(data)
+    print(f'Received supervisor command from web: {cmd}')
+    if ros_node is not None:
+        ros_node.publish_supervisor_command(cmd)
 
 
 # ============================================================
