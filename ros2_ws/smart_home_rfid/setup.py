@@ -16,17 +16,6 @@ setup(
 
     ('share/' + package_name, ['package.xml']),
 
-    # launch 檔案
-    (os.path.join('share', package_name, 'launch'),
-        glob('launch/*.py')),
-
-    # config
-    (os.path.join('share', package_name, 'config'),
-        glob('config/*.json')),
-
-    # templates (最重要的修正!!)
-    (os.path.join('share', package_name, 'templates'),
-        glob('smart_home_rfid/templates/*.html')),
     ],
     install_requires=['setuptools', 'flask', 'flask-socketio', 'pyserial', 'eventlet'],
     zip_safe=True,
@@ -38,8 +27,6 @@ setup(
     entry_points={
         'console_scripts': [
             'arduino_bridge = smart_home_rfid.arduino_bridge:main',
-            'auth_node = smart_home_rfid.auth_node:main',
-            'web_server = smart_home_rfid.web_server:main',
         ],
     },
 )
