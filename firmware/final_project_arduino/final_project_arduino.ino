@@ -6,22 +6,24 @@
  *    - BH1750 光照度感測
  *    - DHT11 溫濕度感測 (腳位 2)
  *    - DC 馬達 PWM 開迴路控制 (MOTOR_PWM_PIN)
- *    - ✅ 改為「交握式」感測資料：
- *        RPi 送 REQ,SENSOR
- *        Arduino 量測一次 → 回 SENSOR,LUX=...,H=...,T=...
- *    - ✅ 新增：
- *        - 一般使用者：MOTOR,SPD=xxx（需要 AUTH,OK 才能動）
- *        - 監督者：SUP_MOTOR,SPD=xxx（不看 AUTH，總是直接動）
+ *    - 交握式感測資料：REQ,SENSOR -> SENSOR,LUX=...,H=...,T=...
+ *    - 一般使用者：MOTOR,SPD=xxx（需要 AUTH,OK 才能動）
+ *    - 監督者：SUP_MOTOR,SPD=xxx（不看 AUTH，總是直接動）
+ *
+ *  ✅ 新增/修正：
+ *    - 蜂鳴器：
+ *        RFID 任意感應：0.5s 短音
+ *        AUTH OK：兩次短音
+ *        AUTH FAIL：一次長音
+ *    - supervisor block LCD 更新：SYS,BLOCK=0/1（由 arduino_bridge 送過來）
+ *    - logout LCD 更新：AUTH,LOGOUT（由 arduino_bridge 送過來）
  * ============================================================ */
 
 #include <SPI.h>
 #include <MFRC522.h>
-
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-
 #include <BH1750FVI.h>
-
 #include "DHT.h"
 
 // ===========================
@@ -29,7 +31,7 @@
 // ===========================
 
 // RFID (MFRC522)
-#define RFID_SS_PIN   10   // SDA / SS
+#define RFID_SS_PIN   10
 #define RFID_RST_PIN   9
 
 // DHT11
@@ -40,6 +42,9 @@ DHT dht(DHTPIN, DHTTYPE);
 // 馬達 PWM 腳位
 #define MOTOR_PWM_PIN 5
 
+// 蜂鳴器腳位
+#define BUZZERPIN 3
+
 // Serial 給 RPi
 #define SERIAL_RPI Serial
 
@@ -47,36 +52,130 @@ DHT dht(DHTPIN, DHTTYPE);
 //  全域物件
 // ===========================
 
-// RFID
 MFRC522 rfid(RFID_SS_PIN, RFID_RST_PIN);
-
-// LCD: 0x27, 20x4
 LiquidCrystal_I2C LCD(0x27, 20, 4);
-
-// BH1750 光感測器
 BH1750FVI LightSensor;
 
 // 授權狀態（一般使用者用）
 bool g_isAuthorized = false;
+
+// 系統是否被 supervisor block（由 SYS,BLOCK=0/1 控制）
+bool g_isBlocked = false;
 
 // 收 Serial 指令的緩衝區
 const uint8_t CMD_BUF_SIZE = 64;
 char cmdBuffer[CMD_BUF_SIZE];
 uint8_t cmdIndex = 0;
 
+// ===========================
+// 蜂鳴器：非阻塞狀態機
+// ===========================
+enum BuzzerPattern {
+  BUZ_NONE = 0,
+  BUZ_RFID,
+  BUZ_AUTH_OK,
+  BUZ_AUTH_FAIL
+};
+
+BuzzerPattern g_buz_pattern = BUZ_NONE;
+uint8_t g_buz_step = 0;
+unsigned long g_buz_step_start_ms = 0;
+bool g_buz_on = false;
+
+// pattern（ms）：ON, OFF, ON, OFF... 以 0 結束
+const uint16_t PAT_RFID[] = {500, 0};                 // 0.5s on
+const uint16_t PAT_OK[]   = {150, 120, 150, 0};       // short, gap, short
+const uint16_t PAT_FAIL[] = {2000, 0};                // 2s long（你原本 2e3）
+
+const uint16_t* currentPattern() {
+  switch (g_buz_pattern) {
+    case BUZ_RFID:     return PAT_RFID;
+    case BUZ_AUTH_OK:  return PAT_OK;
+    case BUZ_AUTH_FAIL:return PAT_FAIL;
+    default:           return nullptr;
+  }
+}
+
+void buzzerStart(BuzzerPattern p) {
+  // 你可以在這裡做優先權：例如 FAIL 蓋過 RFID
+  g_buz_pattern = p;
+  g_buz_step = 0;
+  g_buz_step_start_ms = millis();
+  g_buz_on = false;
+  digitalWrite(BUZZERPIN, LOW);
+}
+
+void buzzerStop() {
+  g_buz_pattern = BUZ_NONE;
+  g_buz_step = 0;
+  g_buz_on = false;
+  digitalWrite(BUZZERPIN, LOW);
+}
+
+void buzzerUpdate() {
+  if (g_buz_pattern == BUZ_NONE) return;
+  const uint16_t* pat = currentPattern();
+  if (!pat) { buzzerStop(); return; }
+
+  unsigned long now = millis();
+
+  // step 指到 0：結束
+  uint16_t dur = pat[g_buz_step];
+  if (dur == 0) { buzzerStop(); return; }
+
+  if (!g_buz_on) {
+    // OFF waiting 或準備開始 ON
+    // 如果目前是 OFF step（奇數 step），就等 OFF 時間到再前進
+    if (g_buz_step % 2 == 1) {
+      if (now - g_buz_step_start_ms >= dur) {
+        g_buz_step++;
+        g_buz_step_start_ms = now;
+      }
+      return;
+    }
+
+    // ON step：開啟蜂鳴器
+    digitalWrite(BUZZERPIN, HIGH);
+    g_buz_on = true;
+    g_buz_step_start_ms = now;
+    return;
+  } else {
+    // ON step 計時到：關閉並進入下一步（OFF）
+    if (now - g_buz_step_start_ms >= dur) {
+      digitalWrite(BUZZERPIN, LOW);
+      g_buz_on = false;
+      g_buz_step++;
+      g_buz_step_start_ms = now;
+      return;
+    }
+  }
+}
+
+// ===========================
 // 前置宣告
+// ===========================
 void handleSerialInput();
 void processCommand(char *cmd);
 void handleRFID();
 void sendRFIDFrame(const String &uidHex);
 void sendSensorFrame();
 void lcdShowLine(uint8_t row, const String &msg);
+void lcdShowIdle();
+void lcdShowBlocked();
+void lcdShowAuthWait();
+void lcdUpdateMotorLine(const String &prefix, int spd);
 
 // ===========================
-//  setup()
+// setup()
 // ===========================
 void setup() {
   SERIAL_RPI.begin(115200);
+
+  pinMode(MOTOR_PWM_PIN, OUTPUT);
+  analogWrite(MOTOR_PWM_PIN, 0);
+
+  pinMode(BUZZERPIN, OUTPUT);
+  digitalWrite(BUZZERPIN, LOW);
 
   // LCD 初始化
   LCD.begin();
@@ -98,23 +197,17 @@ void setup() {
   // DHT 初始化
   dht.begin();
 
-  // 馬達 PWM 腳位
-  pinMode(MOTOR_PWM_PIN, OUTPUT);
-  analogWrite(MOTOR_PWM_PIN, 0);
-
-  // 初始顯示
-  LCD.clear();
-  lcdShowLine(0, "System Ready");
-  lcdShowLine(1, "Waiting for card");
-  lcdShowLine(2, "Auth: NONE");
-  lcdShowLine(3, "Motor: 0");
+  lcdShowIdle();
 }
 
 // ===========================
-//  loop()
+// loop()
 // ===========================
 void loop() {
-  // 1. 處理來自 RPi 的指令 (AUTH, MOTOR, SUP_MOTOR, REQ,SENSOR ...)
+  // 非阻塞蜂鳴器更新（放最前面，確保準時）
+  buzzerUpdate();
+
+  // 1. 處理來自 RPi 的指令
   handleSerialInput();
 
   // 2. 處理 RFID 刷卡
@@ -122,7 +215,7 @@ void loop() {
 }
 
 // ===========================
-//  Serial 指令接收 + 分段
+// Serial 指令接收 + 分段
 // ===========================
 void handleSerialInput() {
   while (SERIAL_RPI.available() > 0) {
@@ -148,80 +241,132 @@ void handleSerialInput() {
 }
 
 // ===========================
-//  處理指令內容
-//    AUTH,OK / AUTH,FAIL
-//    MOTOR,SPD=xxx       （一般使用者，需 AUTH）
-//    SUP_MOTOR,SPD=xxx   （監督者，不看 AUTH）
-//    REQ,SENSOR
+// 處理指令內容
+//   SYS,BLOCK=0/1
+//   AUTH,OK / AUTH,FAIL / AUTH,LOGOUT
+//   MOTOR,SPD=xxx       （一般使用者，需 AUTH）
+//   SUP_MOTOR,SPD=xxx   （監督者，不看 AUTH）
+//   REQ,SENSOR
 // ===========================
 void processCommand(char *cmd) {
-  // AUTH,OK / AUTH,FAIL
+  // 1) SYS,BLOCK=0/1（由 arduino_bridge 送過來）
+  if (strncmp(cmd, "SYS,BLOCK=", 10) == 0) {
+    int v = atoi(cmd + 10);
+    g_isBlocked = (v != 0);
+
+    if (g_isBlocked) {
+      // block：取消授權、停馬達、顯示 blocked
+      g_isAuthorized = false;
+      analogWrite(MOTOR_PWM_PIN, 0);
+      lcdShowBlocked();
+    } else {
+      // unblock：回 idle
+      g_isAuthorized = false;
+      lcdShowIdle();
+    }
+
+    SERIAL_RPI.print("ACK,SYS_BLOCK=");
+    SERIAL_RPI.println(g_isBlocked ? 1 : 0);
+    return;
+  }
+
+  // 2) AUTH,OK / AUTH,FAIL / AUTH,LOGOUT
   if (strncmp(cmd, "AUTH,OK", 7) == 0) {
+    if (g_isBlocked) {
+      // 被 block 時：即使上位機說 OK，也不進入授權
+      g_isAuthorized = false;
+      lcdShowBlocked();
+      SERIAL_RPI.println("ACK,AUTH=BLOCKED");
+      buzzerStart(BUZ_AUTH_FAIL);
+      return;
+    }
+
     g_isAuthorized = true;
     lcdShowLine(2, "Auth: OK   ");
     LCD.setCursor(0, 1);
     LCD.print("Welcome!           ");
     SERIAL_RPI.println("ACK,AUTH=OK");
+    buzzerStart(BUZ_AUTH_OK);
+    return;
   }
-  else if (strncmp(cmd, "AUTH,FAIL", 9) == 0) {
+
+  if (strncmp(cmd, "AUTH,FAIL", 9) == 0) {
     g_isAuthorized = false;
-    lcdShowLine(2, "Auth: FAIL");
-    LCD.setCursor(0, 1);
-    LCD.print("Access Denied      ");
+    if (g_isBlocked) lcdShowBlocked();
+    else {
+      lcdShowLine(2, "Auth: FAIL");
+      LCD.setCursor(0, 1);
+      LCD.print("Access Denied      ");
+    }
     SERIAL_RPI.println("ACK,AUTH=FAIL");
+    buzzerStart(BUZ_AUTH_FAIL);
+    return;
   }
-  // 一般使用者：MOTOR,SPD=xxx（需要已授權）
-  else if (strncmp(cmd, "MOTOR,SPD=", 10) == 0) {
+
+  if (strncmp(cmd, "AUTH,LOGOUT", 11) == 0) {
+    g_isAuthorized = false;
+    if (g_isBlocked) lcdShowBlocked();
+    else lcdShowIdle();
+    SERIAL_RPI.println("ACK,AUTH=LOGOUT");
+    return;
+  }
+
+  // 3) 一般使用者馬達：MOTOR,SPD=xxx（需要已授權；block 時禁止）
+  if (strncmp(cmd, "MOTOR,SPD=", 10) == 0) {
     int spd = atoi(cmd + 10);
     if (spd < 0) spd = 0;
     if (spd > 255) spd = 255;
 
+    if (g_isBlocked) {
+      analogWrite(MOTOR_PWM_PIN, 0);
+      SERIAL_RPI.println("ERR,SYSTEM_BLOCKED");
+      return;
+    }
+
     if (g_isAuthorized) {
       analogWrite(MOTOR_PWM_PIN, spd);
-
-      char buf[20];
-      snprintf(buf, sizeof(buf), "Motor: %d  ", spd);
-      lcdShowLine(3, String(buf));
-
+      lcdUpdateMotorLine("Motor:", spd);
       SERIAL_RPI.print("ACK,MOTOR=");
       SERIAL_RPI.println(spd);
     } else {
-      // 未授權的馬達指令
       SERIAL_RPI.println("ERR,UNAUTHORIZED_MOTOR_CMD");
     }
+    return;
   }
-  // ✅ 監督者專用：SUP_MOTOR,SPD=xxx（不看 g_isAuthorized，總是執行）
-  else if (strncmp(cmd, "SUP_MOTOR,SPD=", 14) == 0) {
+
+  // 4) 監督者馬達：SUP_MOTOR,SPD=xxx（不看 g_isAuthorized；block 時仍可用）
+  if (strncmp(cmd, "SUP_MOTOR,SPD=", 14) == 0) {
     int spd = atoi(cmd + 14);
     if (spd < 0) spd = 0;
     if (spd > 255) spd = 255;
 
     analogWrite(MOTOR_PWM_PIN, spd);
-
-    char buf[20];
-    snprintf(buf, sizeof(buf), "Sup: %d     ", spd);
-    lcdShowLine(3, String(buf));  // 可以看得出是 supervisor 控制
-
+    lcdUpdateMotorLine("Sup:", spd);
     SERIAL_RPI.print("ACK,SUP_MOTOR=");
     SERIAL_RPI.println(spd);
+    return;
   }
-  // ✅ REQ,SENSOR → 量測一次感測器 → 回 SENSOR,.... 封包
-  else if (strncmp(cmd, "REQ,SENSOR", 10) == 0) {
-    sendSensorFrame();  // 量測並送出資料
+
+  // 5) REQ,SENSOR
+  if (strncmp(cmd, "REQ,SENSOR", 10) == 0) {
+    sendSensorFrame();
+    return;
   }
-  else {
-    SERIAL_RPI.print("WARN,UNKNOWN_CMD=");
-    SERIAL_RPI.println(cmd);
-  }
+
+  SERIAL_RPI.print("WARN,UNKNOWN_CMD=");
+  SERIAL_RPI.println(cmd);
 }
 
 // ===========================
-//  處理 RFID 刷卡
+// 處理 RFID 刷卡
 // ===========================
 void handleRFID() {
   if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
     return;
   }
+
+  // 任意 RFID 感應：0.5 秒短音（非阻塞）
+  buzzerStart(BUZ_RFID);
 
   String uidHex = "";
   for (byte i = 0; i < rfid.uid.size; i++) {
@@ -230,8 +375,15 @@ void handleRFID() {
   }
   uidHex.toUpperCase();
 
-  lcdShowLine(0, "Card detected     ");
-  lcdShowLine(1, "UID: " + uidHex);
+  if (g_isBlocked) {
+    lcdShowBlocked();
+    lcdShowLine(1, "Card ignored       ");
+    lcdShowLine(2, "Auth: BLOCK        ");
+  } else {
+    lcdShowLine(0, "Card detected     ");
+    lcdShowLine(1, "UID: " + uidHex);
+    lcdShowAuthWait();
+  }
 
   sendRFIDFrame(uidHex);
 
@@ -245,8 +397,8 @@ void sendRFIDFrame(const String &uidHex) {
 }
 
 // ===========================
-//  量測一次感測器並送出
-//  SENSOR,LUX=...,H=...,T=...
+// 量測一次感測器並送出
+// SENSOR,LUX=...,H=...,T=...
 // ===========================
 void sendSensorFrame() {
   int lux = LightSensor.GetLightIntensity();
@@ -269,7 +421,7 @@ void sendSensorFrame() {
 }
 
 // ===========================
-//  LCD 顯示工具
+// LCD 顯示工具
 // ===========================
 void lcdShowLine(uint8_t row, const String &msg) {
   if (row > 3) return;
@@ -277,4 +429,31 @@ void lcdShowLine(uint8_t row, const String &msg) {
   LCD.print("                    "); // 20 spaces
   LCD.setCursor(0, row);
   LCD.print(msg);
+}
+
+void lcdShowIdle() {
+  LCD.clear();
+  lcdShowLine(0, "System Ready");
+  lcdShowLine(1, "Waiting for card");
+  lcdShowLine(2, "Auth: NONE");
+  lcdShowLine(3, "Motor: 0");
+}
+
+void lcdShowBlocked() {
+  LCD.clear();
+  lcdShowLine(0, "SYSTEM BLOCKED");
+  lcdShowLine(1, "Supervisor mode");
+  lcdShowLine(2, "Auth: BLOCK");
+  lcdShowLine(3, "Motor: 0");
+}
+
+void lcdShowAuthWait() {
+  lcdShowLine(2, "Auth: WAIT PWD     ");
+}
+
+void lcdUpdateMotorLine(const String &prefix, int spd) {
+  char buf[21];
+  // 讓文字不殘留
+  snprintf(buf, sizeof(buf), "%s %d            ", prefix.c_str(), spd);
+  lcdShowLine(3, String(buf));
 }

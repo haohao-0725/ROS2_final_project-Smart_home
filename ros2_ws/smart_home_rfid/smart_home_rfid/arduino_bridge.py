@@ -230,6 +230,10 @@ class ArduinoBridgeNode(Node):
             stop_msg = Int32()
             stop_msg.data = 0
             self.supervisor_motor_override_callback(stop_msg)
+            block_val = 1 if self.supervisor_blocked else 0
+            cmd = f'SYS,BLOCK={block_val}\n'
+            self.ser.write(cmd.encode('utf-8'))
+
         else:
             self.get_logger().info('Supervisor block disabled.')
 
