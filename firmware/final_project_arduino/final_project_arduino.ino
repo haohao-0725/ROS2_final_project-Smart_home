@@ -9,6 +9,9 @@
  *    - ✅ 改為「交握式」感測資料：
  *        RPi 送 REQ,SENSOR
  *        Arduino 量測一次 → 回 SENSOR,LUX=...,H=...,T=...
+ *    - ✅ 新增：
+ *        - 一般使用者：MOTOR,SPD=xxx（需要 AUTH,OK 才能動）
+ *        - 監督者：SUP_MOTOR,SPD=xxx（不看 AUTH，總是直接動）
  * ============================================================ */
 
 #include <SPI.h>
@@ -53,7 +56,7 @@ LiquidCrystal_I2C LCD(0x27, 20, 4);
 // BH1750 光感測器
 BH1750FVI LightSensor;
 
-// 授權狀態
+// 授權狀態（一般使用者用）
 bool g_isAuthorized = false;
 
 // 收 Serial 指令的緩衝區
@@ -111,7 +114,7 @@ void setup() {
 //  loop()
 // ===========================
 void loop() {
-  // 1. 處理來自 RPi 的指令 (AUTH, MOTOR, REQ,SENSOR ...)
+  // 1. 處理來自 RPi 的指令 (AUTH, MOTOR, SUP_MOTOR, REQ,SENSOR ...)
   handleSerialInput();
 
   // 2. 處理 RFID 刷卡
@@ -137,6 +140,7 @@ void handleSerialInput() {
       if (cmdIndex < CMD_BUF_SIZE - 1) {
         cmdBuffer[cmdIndex++] = c;
       } else {
+        // overflow，丟掉這一行
         cmdIndex = 0;
       }
     }
@@ -146,8 +150,9 @@ void handleSerialInput() {
 // ===========================
 //  處理指令內容
 //    AUTH,OK / AUTH,FAIL
-//    MOTOR,SPD=xxx
-//    ✅ REQ,SENSOR
+//    MOTOR,SPD=xxx       （一般使用者，需 AUTH）
+//    SUP_MOTOR,SPD=xxx   （監督者，不看 AUTH）
+//    REQ,SENSOR
 // ===========================
 void processCommand(char *cmd) {
   // AUTH,OK / AUTH,FAIL
@@ -165,7 +170,7 @@ void processCommand(char *cmd) {
     LCD.print("Access Denied      ");
     SERIAL_RPI.println("ACK,AUTH=FAIL");
   }
-  // MOTOR,SPD=xxx
+  // 一般使用者：MOTOR,SPD=xxx（需要已授權）
   else if (strncmp(cmd, "MOTOR,SPD=", 10) == 0) {
     int spd = atoi(cmd + 10);
     if (spd < 0) spd = 0;
@@ -181,10 +186,26 @@ void processCommand(char *cmd) {
       SERIAL_RPI.print("ACK,MOTOR=");
       SERIAL_RPI.println(spd);
     } else {
+      // 未授權的馬達指令
       SERIAL_RPI.println("ERR,UNAUTHORIZED_MOTOR_CMD");
     }
   }
-  // ✅ 新增：REQ,SENSOR → 量測一次感測器 → 回傳 SENSOR,.... 封包
+  // ✅ 監督者專用：SUP_MOTOR,SPD=xxx（不看 g_isAuthorized，總是執行）
+  else if (strncmp(cmd, "SUP_MOTOR,SPD=", 14) == 0) {
+    int spd = atoi(cmd + 14);
+    if (spd < 0) spd = 0;
+    if (spd > 255) spd = 255;
+
+    analogWrite(MOTOR_PWM_PIN, spd);
+
+    char buf[20];
+    snprintf(buf, sizeof(buf), "Sup: %d     ", spd);
+    lcdShowLine(3, String(buf));  // 可以看得出是 supervisor 控制
+
+    SERIAL_RPI.print("ACK,SUP_MOTOR=");
+    SERIAL_RPI.println(spd);
+  }
+  // ✅ REQ,SENSOR → 量測一次感測器 → 回 SENSOR,.... 封包
   else if (strncmp(cmd, "REQ,SENSOR", 10) == 0) {
     sendSensorFrame();  // 量測並送出資料
   }

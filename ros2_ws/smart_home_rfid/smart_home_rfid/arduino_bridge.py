@@ -246,13 +246,17 @@ class ArduinoBridgeNode(Node):
         if spd > 255:
             spd = 255
 
-        cmd = f'MOTOR,SPD={spd}\n'
+        # 監督者專用指令：不經過一般 AUTH 檢查
+        cmd = f'SUP_MOTOR,SPD={spd}\n'
         with self.serial_lock:
             try:
                 self.ser.write(cmd.encode('utf-8'))
-                self.get_logger().info(f'Sent to Arduino (supervisor): {cmd.strip()}')
+                self.get_logger().info(
+                    f'Sent to Arduino (supervisor): {cmd.strip()}')
             except serial.SerialException as e:
-                self.get_logger().error(f'Serial write error (SUP_MOTOR): {e}')
+                self.get_logger().error(
+                    f'Serial write error (SUP_MOTOR): {e}')
+
     # -------------------------
     # 定期向Arduino收取資料
     # -------------------------
