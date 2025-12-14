@@ -102,11 +102,12 @@ class SupervisorNode(Node):
         self.temp_users[uid] = expire_at
 
         msg = String()
-        msg.data = json.dumps({
-            'uid': uid,
-            'password': password,
-            'expire_at': expire_at,
-        })
+        # msg.data = json.dumps({
+        #     'uid': uid,
+        #     'password': password,
+        #     'expire_at': expire_at,
+        # })
+        msg.data = f"{uid}:{password}"
         self.temp_user_pub.publish(msg)
 
         self.last_action = f'ADDED_TEMP_USER:{uid}'
