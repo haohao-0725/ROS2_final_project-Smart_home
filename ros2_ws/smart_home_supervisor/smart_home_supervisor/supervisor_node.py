@@ -107,7 +107,7 @@ class SupervisorNode(Node):
         #     'password': password,
         #     'expire_at': expire_at,
         # })
-        msg.data = f"{uid}:{password}"
+        msg.data = f"{uid},{password}"
         self.temp_user_pub.publish(msg)
 
         self.last_action = f'ADDED_TEMP_USER:{uid}'
