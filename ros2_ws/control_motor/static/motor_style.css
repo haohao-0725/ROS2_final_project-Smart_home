@@ -1,0 +1,246 @@
+#tv{
+    font-family: "Microsoft JhengHei", sans-serif;/*這段代表整個網頁用什麼字體 第一個是微軟正黑體*/
+    background-color: #f7f7f7;
+    background-image: url("電視機背景.jpg");
+    background-position: center;
+    background-size: cover;
+    position: relative;
+    min-height: 100vh;
+    background-attachment: fixed;
+    }
+#passwordbackground{
+    font-family: "Microsoft JhengHei", sans-serif;/*這段代表整個網頁用什麼字體 第一個是微軟正黑體*/
+    background-color: #f7f7f7;
+    background-image: url("登入背景圖.jpg");
+    background-position: center;
+    background-size: cover;
+    position: relative;
+    min-height: 100vh;
+    background-attachment: fixed;
+}
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+#System_maintenance{
+    min-height: 100vh;
+  background-image: url("/static/系統維護中.jpg");
+  background-size: contain;      /* 🔑 關鍵 */
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #000; 
+}
+
+.f1{
+    color: rgb(247, 247, 249);
+    font-size: 50px;
+}
+.f2{
+    color: rgb(248, 248, 251);
+    font-size: 30px;
+}
+/* 新增：外層容器設定，負責水平排列 */
+#data_putinside {
+    display: flex; /* 啟用 Flexbox 佈局 */
+    flex-direction: row; /* 確保子元素水平排列 */
+    justify-content: center; /* 將三個 form 區塊整體水平居中 */
+    align-items: flex-start; /* 確保所有表單從頂部對齊 */
+    width: fit-content; /* 讓容器寬度僅包裹內容 */ 
+    margin: -50px 0 20px 420px;
+}
+
+/* 針對三個表單容器的樣式 */
+.data-block {
+    position: static;
+
+    width: 250px;
+    height: 450px;
+
+    display: inline-block;
+    vertical-align: top;
+    margin-right: 20px;
+}
+
+/* 針對 Textarea 本身的樣式 */
+#tem_input,
+#lux_input,
+#hum_input {
+    border: 2px solid #101010;
+    padding: 10px;
+    font-size: 25px;
+    border-radius: 35px;
+    
+    /* Textarea 的寬高由 form 容器決定，並使用 box-sizing */
+    width: 100%; 
+    height: 100%; /* 讓 textarea 填滿 form 容器的高度 */
+    
+    box-sizing: border-box; 
+    display: block; 
+}
+
+.f{
+    color: #f3f6f7; /* 設置顏色 */
+    background-color: #0a12edb8;
+    display: block; /* 讓它佔據一行 */
+    padding: 5px 10px;
+    text-align: center; /* 文字居中 */
+    border-radius: 5px;
+    border: 3px solid black;
+}
+#f1{
+    color: #f3f6f7; /* 設置顏色 */
+    background-color: #0a12edb8;
+    text-align: center; /* 文字居中 */
+}
+.button1 {
+    margin-top: -80px; /* 讓按鈕和輸入框之間有間隔 */
+    color: rgb(12, 11, 11);
+    background-color:rgb(237, 240, 238);
+    width: 100px;
+    height: 50px;
+    border-radius: 20px;
+    border-style: none;
+    cursor: pointer;
+
+}
+.button1:hover{
+    background-color: rgb(191, 199, 196);
+    filter: brightness(1.2);
+}
+.button1:active{
+    background-color: rgb(105, 148, 148);
+    filter: brightness(3);
+}
+.g1{
+    /* 讓 h1 標籤內的文字內容水平置中 */
+    text-align: center; 
+    color:white; 
+    font-size: 40px;
+    margin-top: 100px; /* 您可以從 100px 開始嘗試，直到滿意為止 */
+    margin-bottom: 30px;
+}
+.login-container{
+    width: 400px; 
+    border: 1px solid black; 
+    padding: 20px;
+    /* 保持居中 */
+    margin-left: auto;
+    margin-right: auto; 
+    border-radius: 8px;
+}
+/*--------------*/
+/*password 的CSS*/
+/*--------------*/
+#input1, #input2 {
+    /* 移除 display: block; 讓它們可以並排 */
+    display: inline-block; 
+    /* 確保它們之間有間隔 */
+    margin: 5px; 
+    
+    width: 170px; /* 寬度稍微減小，以適應並排 */
+    height: 40px;
+    padding: 8px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+}
+.inputall {
+    /* 確保輸入框在容器內居中 */
+    text-align: center; 
+    margin-bottom: 20px;
+}
+
+/* 登入按鈕容器的修正 */
+.loginall {
+    /* 不再需要 text-align: center; */
+    /* 讓按鈕在父容器內靠右對齊 */
+    text-align: right; 
+    
+    /* 移除所有衝突的 margin 屬性 */
+    margin: 0; 
+}
+#login:active{
+    background-color: rgb(56, 112, 172);
+    filter: brightness(3);   
+}
+#login:hover{
+    background-color: rgb(191, 199, 196);
+        filter: brightness(1.2);
+}
+.loginall{
+    /* 讓容器與輸入框群組保持相同的寬度，這樣右對齊才有意義 */
+    width: 100%;    
+    /* 讓這個容器在頁面上水平置中 */
+    margin: 20px auto;
+    text-align: center;
+    margin-bottom: 30px;
+}
+#login {
+    /* 🚨 核心修正：移除無效的邊距和巨大的 margin-left */
+    /* 讓按鈕的對齊由父容器 .loginall 的 text-align: right 決定 */
+    display: inline-block; /* 讓按鈕在行內顯示 */
+    
+    /* 移除這個巨大的錯誤定位 */
+    margin-left: 0; 
+    margin-right: 0; 
+    margin-top: 20px; 
+
+    color: rgb(235, 224, 224);
+    background-color: rgb(47, 25, 126);
+    width: 100px;
+    height: 50px;
+    border-radius: 20px;
+    border-style: none;
+    cursor: pointer;
+    /* 移除 text-align: right; 和 padding-right: 10px; */
+}
+#input3{
+    height: 50px;
+    padding: 8px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+}
+/* motor_style.css */
+
+.speed-control {
+    /* 保持內容水平並排 */
+    display: flex; 
+    align-items: center; /* 垂直居中對齊按鈕和輸入框 */    
+    margin-left: auto; /* 將所有可用空間推到左邊 */    
+    /* 🚨 核心修正 2：設定 margin-right 來控制離右邊緣的距離 */
+    margin-right: 80px; /* 這裡的 50px 是它離右邊界的距離，請手動調整 */   
+    /* 保持 margin-top 來控制它與上方元素的垂直間隔 */
+    margin-top: 25px; 
+    margin-bottom: 20px;
+    
+    position: static;
+}
+#button2 {
+    margin-top: 5px; /* 讓按鈕和輸入框之間有間隔 */
+    color: rgb(200, 230, 208);
+    background-color:rgb(5, 80, 15);
+    width: 100px;
+    height: 60px;
+    border-radius: 20px;
+    border-style: none;
+    cursor: pointer;
+}
+#button2:hover{
+    background-color: rgb(191, 199, 196);
+    filter: brightness(1.2);
+}
+#button2:active{
+    background-color: rgb(105, 148, 148);
+    filter: brightness(3);
+}
+
+#speed_input {
+    width: 200px; /* 調整輸入框的寬度 */
+    height: 50px;
+    padding: 5px;
+    font-size: 25px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    display: inline-block;
+}

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>馬達狀態顯示頁面</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='motor_style.css') }}">
+</head>
+<body id="tv">
+
+<h1 class="f1">
+        馬達資訊顯示頁面
+</h1>
+
+
+<div class="speed-control">
+    <button id="button2" for="speed_input" onclick="readspeed()">改變轉速</button>
+    <input id="speed_input" type="text" placeholder="轉速數值" >
+</div>
+<!-- rows == 垂直縱列的行數，預設 2 行。 -->
+<!-- cols == 水平欄位的字元數，預設 20 個字元 -->
+<!-- name是你要傳送資料的變數 很重要 -->
+<!-- id 是為了改變css做的 -->
+
+
+<div id="data_putinside">
+
+    <!-- 溫度資訊 -->
+    <div class="data-block">
+        <label class="f">溫度資訊</label><br>
+        <textarea id="tem_input" rows="10" cols="30" placeholder="顯示馬達溫度資訊" readonly></textarea>
+        <br>
+    </div>
+
+    <!-- 亮度資訊 -->
+    <div class="data-block">
+        <label class="f">亮度資訊</label><br>
+        <textarea id="lux_input" rows="10" cols="30" placeholder="顯示亮度資訊" readonly></textarea>
+        <br>
+    </div>
+
+    <!-- 濕度資訊 -->
+    <div class="data-block">
+        <label class="f">濕度資訊</label><br>
+        <textarea id="hum_input" rows="10" cols="30" placeholder="顯示濕度資訊"readonly></textarea>
+        <br>
+    </div>
+
+</div>
+
+
+    <button class="button1" type="button" onclick="deleteInput()">清除資料</button>
+    <a href="{{ url_for('password_page') }}"><button class="button1" type="button" onclick="TalkLogout()"> 登出 </button>
+    </a>
+</form>
+</form>
+        
+<script>
+
+function deleteInput(){
+    fetch("/api/delete", {
+        method: "POST"
+    })
+    .then(res => res.json())
+    .then(data => {
+        alert(data.msg); 
+        document.getElementById("tem_input").value = ""; // 清掉畫面
+        document.getElementById("lux_input").value = "";
+        document.getElementById("hum_input").value = "";
+    });
+}
+//////////////////
+//溫度的function//
+/////////////////
+function TemInput() {
+    fetch("/api/temp", { method: "POST" })
+        .then(res => res.json()) //把後端回傳的 JSON 字串 → 轉成 JS 物件 then就是之後會啟動
+        .then(data => {
+                console.log("更新 API 回傳：", data); 
+                if (data.status === "success") {
+
+                        // 將資料寫回 指令id="tem_input"的方框 然後讓這個資料變成data.data.join("\n"); 
+                        document.getElementById("tem_input").value =
+                        data.data.join("\n");
+
+                        // 自動捲到底
+                        let ta = document.getElementById("tem_input");
+                        ta.scrollTop = ta.scrollHeight;
+
+                } else {
+                        alert("更新失敗: " + data.msg);
+                }
+                });
+}
+//////////////////
+//亮度的function//
+/////////////////
+function LuxInput() {
+    fetch("/api/lux", { method: "POST" })
+        .then(res => res.json()) //把後端回傳的 JSON 字串 → 轉成 JS 物件 then就是之後會啟動
+        .then(data => {
+                console.log("更新 API 回傳：", data); 
+                if (data.status === "success") {
+
+                        // 將資料寫回 指令id="tem_input"的方框 然後讓這個資料變成data.data.join("\n"); 
+                        document.getElementById("lux_input").value =
+                        data.data.join("\n");
+
+                        // 自動捲到底
+                        let ta = document.getElementById("lux_input");
+                        ta.scrollTop = ta.scrollHeight;
+
+                } else {
+                        alert("更新失敗: " + data.msg);
+                }
+                });
+}
+//////////////////
+//濕度的function//
+/////////////////
+function HumInput() {
+    fetch("/api/hum", { method: "POST" })
+        .then(res => res.json()) //把後端回傳的 JSON 字串 → 轉成 JS 物件 then就是之後會啟動
+        .then(data => {
+                console.log("更新 API 回傳：", data); 
+                if (data.status === "success") {
+
+                        // 將資料寫回 指令id="tem_input"的方框 然後讓這個資料變成data.data.join("\n"); 
+                        document.getElementById("hum_input").value =
+                        data.data.join("\n");
+
+                        // 自動捲到底
+                        let ta = document.getElementById("hum_input");
+                        ta.scrollTop = ta.scrollHeight;
+
+                } else {
+                        alert("更新失敗: " + data.msg);
+                }
+                });
+}
+setInterval(HumInput, 990);
+setInterval(LuxInput, 990);
+setInterval(TemInput, 990); //對renewInput這個還是進行時延 每0.99秒執行一次這個函式
+
+function readspeed() {
+    let speed = document.getElementById("speed_input").value;
+
+    // 第一步：清空 SQL 的 speed_table
+    fetch("/api/clear_speed", {
+        method: "POST"
+    })
+    .then(res => res.json())
+    .then(result => {
+        console.log(result.msg);
+
+        // 第二步：寫入新的 speed
+        return fetch("/api/speed", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ input: speed })
+        });
+    })
+    .then(res => res.json())
+    .then(data => {
+        console.log("成功寫入新的 speed:", data);
+    });
+
+    console.log("按下輸入速度：", speed);
+}
+function TalkLogout() {
+    fetch("/api/logout", {method: "POST"})
+    .then(res => res.json())
+    .then(data => {
+        // 🚨 修正：將 data.message 改為 data.msg
+        alert(data.msg); 
+        console.log("已登出");
+        
+        // 💡 建議：成功登出後，應重新導向到登入頁
+        // window.location.href = "/"; 
+    })
+    .catch(error => {
+        // 處理網路或 JSON 解析失敗的錯誤
+        console.error("登出請求失敗:", error);
+        alert("登出操作失敗，請檢查網路或後端服務。");
+    });
+}
+</script>
+<script src="{{ url_for('static', filename='maintenance_guard.js') }}"></script>
+</body>
+</html>
